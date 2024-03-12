@@ -1022,7 +1022,8 @@ static void ad_mux_machine(struct port *port, bool *update_slave_arr)
 			if (!(port->sm_vars & AD_PORT_SELECTED) ||
 			    (port->sm_vars & AD_PORT_STANDBY) ||
 			    !(port->partner_oper.port_state & LACP_STATE_SYNCHRONIZATION) ||
-			    !(port->actor_oper_port_state & LACP_STATE_SYNCHRONIZATION)) {
+			    !(port->actor_oper_port_state & LACP_STATE_SYNCHRONIZATION) ||
+				!port->aggregator->is_active) {
 				port->sm_mux_state = AD_MUX_ATTACHED;
 			} else {
 				/* if port state hasn't changed make

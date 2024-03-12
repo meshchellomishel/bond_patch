@@ -769,6 +769,106 @@ static u32 __get_agg_bandwidth(struct aggregator *aggregator)
 	return bandwidth;
 }
 
+static bool __actor_better(struct aggregator *aggregator)
+{
+	u16 actor_system_priority = aggregator->slave->ad_info->port.actor_system_priority;
+	u16 partner_system_priority = aggregator->slave->ad_info->port.partner_oper.system_priority;
+
+	if (actor_system_priority < partner_system_priority)
+		return true;
+	else if (actor_system_priority > partner_system_priority)
+		return false;
+	else if (memcmp(&aggregator->aggregator_mac_address.mac_addr_value,
+			&aggregator->partner_system.mac_addr_value, ETH_ALEN) <= 0)
+		return true;
+	return false;
+}
+
+static void inline __fill_params(u16 system_priority, struct mac_addr *mac_addr, struct lacp_prio_params *params)
+{
+	params->system_priority = system_priority;
+	memcpy(&params->mac_addr.mac_addr_value, mac_addr->mac_addr_value, sizeof(mac_addr->mac_addr_value));
+}
+
+static int __compare_lacp_prio_params(struct lacp_prio_params *param1, struct lacp_prio_params *param2)
+{
+	if (param1->system_priority < param2->system_priority)
+		return -1;
+	else if (param1->system_priority > param2->system_priority)
+		return 1;
+
+	return memcmp(param1->mac_addr.mac_addr_value, param2->mac_addr.mac_addr_value,
+				sizeof(u8)*ETH_ALEN);
+}
+
+static struct aggregator *__compare_actors(struct aggregator *curr, struct aggregator *best)
+{
+	struct port curr_port = curr->slave->ad_info->port;
+	struct port best_port = best->slave->ad_info->port;
+	bool res = true;
+
+	if (curr_port.actor_port_priority > best_port.actor_port_priority)
+		res = true;
+	else if (curr_port.actor_port_priority < best_port.actor_port_priority)
+		res = false;
+	else if (curr_port.actor_port_number < best_port.actor_port_number)
+		res = false;
+
+	if (res)
+		return best;
+	else
+		return curr;
+}
+
+static struct aggregator *__compare_partners(struct aggregator *curr, struct aggregator *best)
+{
+	struct port_params curr_partner_params = curr->slave->ad_info->port.partner_oper;
+	struct port_params best_partner_params = curr->slave->ad_info->port.partner_oper;
+	bool res = true;
+
+	if (curr_partner_params.port_priority > best_partner_params.port_priority)
+		res = true;
+	else if (curr_partner_params.port_priority < best_partner_params.port_priority)
+		res = false;
+	else if (curr_partner_params.port_number < best_partner_params.port_number)
+		res = false;
+
+	if (res)
+		return best;
+	else
+		return curr;
+}
+
+static struct aggregator *__compare_lacp_prio(struct aggregator *curr, struct aggregator *best)
+{
+	struct lacp_prio_params curr_params, best_params;
+	int result;
+	uint16_t actor_system_priority = curr->slave->ad_info->port.actor_system_priority;
+	bool curr_actor = __actor_better(curr);
+	bool best_actor = __actor_better(best);
+
+	if (curr_actor && best_actor)
+		return __compare_actors(curr, best);
+
+	if (curr_actor)
+		__fill_params(actor_system_priority, &curr->aggregator_mac_address, &curr_params);
+	else
+		__fill_params(curr->partner_system_priority, &curr->partner_system, &curr_params);
+
+	if (best_actor)
+		__fill_params(actor_system_priority, &best->aggregator_mac_address, &best_params);
+	else
+		__fill_params(best->partner_system_priority, &best->partner_system, &best_params);
+
+	result = __compare_lacp_prio_params(&curr_params, &best_params);
+	if (result < 0)
+		return curr;
+	else if (result > 0)
+		return best;
+
+	return __compare_partners(curr, best);
+}
+
 /**
  * __get_active_agg - get the current active aggregator
  * @aggregator: the aggregator we're looking at
@@ -1627,7 +1727,9 @@ static struct aggregator *ad_agg_selection_test(struct aggregator *best,
 			return curr;
 
 		break;
-
+	case BOND_AD_LACP_PRIO_DYNAMIC:
+	case BOND_AD_LACP_PRIO_STABLE:
+		return __compare_lacp_prio(curr, best);
 	default:
 		net_warn_ratelimited("%s: (slave %s): Impossible agg select mode %d\n",
 				     curr->slave->bond->dev->name,
@@ -1706,7 +1808,8 @@ static void ad_agg_selection_logic(struct aggregator *agg,
 	}
 
 	if (best &&
-	    __get_agg_selection_mode(best->lag_ports) == BOND_AD_STABLE) {
+	    (__get_agg_selection_mode(best->lag_ports) == BOND_AD_STABLE ||
+		__get_agg_selection_mode(best->lag_ports) == BOND_AD_LACP_PRIO_STABLE)) {
 		/* For the STABLE policy, don't replace the old active
 		 * aggregator if it's still active (it has an answering
 		 * partner) or if both the best and active don't have an

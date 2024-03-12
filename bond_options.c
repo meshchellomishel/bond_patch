@@ -42,6 +42,8 @@ static int bond_option_arp_all_targets_set(struct bonding *bond,
 					   const struct bond_opt_value *newval);
 static int bond_option_prio_set(struct bonding *bond,
 				const struct bond_opt_value *newval);
+static int bond_option_ad_port_prio_set(struct bonding *bond,
+				const struct bond_opt_value *newval);
 static int bond_option_primary_set(struct bonding *bond,
 				   const struct bond_opt_value *newval);
 static int bond_option_primary_reselect_set(struct bonding *bond,
@@ -382,6 +384,14 @@ static const struct bond_option bond_opts[BOND_OPT_LAST] = {
 						BIT(BOND_MODE_TLB) |
 						BIT(BOND_MODE_ALB)),
 		.set = bond_option_prio_set
+	},
+	[BOND_OPT_AD_PORT_PRIO] = {
+		.id = BOND_OPT_AD_PORT_PRIO,
+		.name = "ad_port_prio",
+		.desc = "Port priority in LACP",
+		.flags = BOND_OPTFLAG_RAWVAL,
+		.unsuppmodes = BOND_MODE_ALL_EX(BIT(BOND_MODE_8023AD)),
+		.set = bond_option_ad_port_prio_set
 	},
 	[BOND_OPT_PRIMARY] = {
 		.id = BOND_OPT_PRIMARY,
@@ -1329,6 +1339,21 @@ static int bond_option_prio_set(struct bonding *bond,
 			   "prio updated, but will not affect failover re-selection as primary slave have been set\n");
 	else
 		bond_select_active_slave(bond);
+
+	return 0;
+}
+
+static int bond_option_ad_port_prio_set(struct bonding *bond,
+				const struct bond_opt_value *newval)
+{
+	struct slave *slave;
+
+	slave = bond_slave_get_rtnl(newval->slave_dev);
+	if (!slave) {
+		netdev_dbg(newval->slave_dev, "%s called on NULL slave\n", __func__);
+		return -ENODEV;
+	}
+	slave->ad_info->port.actor_port_priority = newval->value;
 
 	return 0;
 }

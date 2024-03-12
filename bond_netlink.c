@@ -191,8 +191,9 @@ static const struct nla_policy bond_policy[IFLA_BOND_MAX + 1] = {
 };
 
 static const struct nla_policy bond_slave_policy[IFLA_BOND_SLAVE_MAX + 1] = {
-	[IFLA_BOND_SLAVE_QUEUE_ID]	= { .type = NLA_U16 },
-	[IFLA_BOND_SLAVE_PRIO]		= { .type = NLA_S32 },
+	[IFLA_BOND_SLAVE_QUEUE_ID]			 = { .type = NLA_U16 },
+	[IFLA_BOND_SLAVE_PRIO]				 = { .type = NLA_S32 },
+	[IFLA_BOND_SLAVE_AD_ACTOR_PORT_PRIO] = { .type = NLA_U16 },
 };
 
 static int bond_validate(struct nlattr *tb[], struct nlattr *data[],
@@ -239,6 +240,15 @@ static int bond_slave_changelink(struct net_device *bond_dev,
 		bond_opt_slave_initval(&newval, &slave_dev, prio);
 		err = __bond_opt_set(bond, BOND_OPT_PRIO, &newval,
 				     data[IFLA_BOND_SLAVE_PRIO], extack);
+		if (err)
+			return err;
+	}
+
+	if (data[IFLA_BOND_SLAVE_AD_ACTOR_PORT_PRIO]) {
+		u16 prio = nla_get_u16(data[IFLA_BOND_SLAVE_AD_ACTOR_PORT_PRIO]);
+		bond_opt_slave_initval(&newval, &slave_dev, prio);
+		err = __bond_opt_set(bond, BOND_OPT_AD_PORT_PRIO, &newval,
+				     data[IFLA_BOND_SLAVE_AD_ACTOR_PORT_PRIO], extack);
 		if (err)
 			return err;
 	}

@@ -28,6 +28,18 @@ static size_t bond_get_slave_size(const struct net_device *bond_dev,
 		nla_total_size(sizeof(u8)) +	/* IFLA_BOND_SLAVE_AD_ACTOR_OPER_PORT_STATE */
 		nla_total_size(sizeof(u16)) +	/* IFLA_BOND_SLAVE_AD_PARTNER_OPER_PORT_STATE */
 		nla_total_size(sizeof(s32)) +	/* IFLA_BOND_SLAVE_PRIO */
+
+		nla_total_size(sizeof(char)*IFNAMSIZ) +	/* IFLA_BOND_SLAVE_IFNAME */
+		nla_total_size(sizeof(u32)) +	/* IFLA_BOND_SLAVE_IFINDEX */
+		nla_total_size(sizeof(u16)) +	/* IFLA_BOND_SLAVE_AD_INFO_ACTOR_KEY */
+		nla_total_size(sizeof(u16)) +	/* ILFA_BOND_SLAVE_AD_PARTNER_OPER_SYSTEM_PRIO */
+		nla_total_size(MAX_ADDR_LEN) +	/* IFLA_BOND_SLAVE_AD_PARTNER_OPER_SYSTEM_ID */
+		nla_total_size(sizeof(u16)) +	/* IFLA_BOND_SLAVE_AD_PATNER_OPER_KEY */
+		nla_total_size(sizeof(u16)) +	/* IFLA_BOND_SLAVE_AD_ACTOR_PORT_NUM */
+		nla_total_size(sizeof(u16)) +	/* IFLA_BOND_SLAVE_PARTNER_PORT_NUM */
+		nla_total_size(sizeof(u16)) +	/* IFLA_BOND_SLAVE_PARTNER_OPER_PORT_PRIO */
+		nla_total_size(sizeof(u16)) +	/* IFLA_BOND_SLAVE_AD_ACTOR_PORT_PRIO */
+		nla_total_size(sizeof(u16)) +	/* IFLA_BOND_SLAVE_AD_RX_PORT_STATE */
 		0;
 }
 
@@ -74,6 +86,60 @@ static int bond_fill_slave_info(struct sk_buff *skb,
 			if (nla_put_u16(skb,
 					IFLA_BOND_SLAVE_AD_PARTNER_OPER_PORT_STATE,
 					ad_port->partner_oper.port_state))
+				goto nla_put_failure;
+
+			if (nla_put(skb, IFLA_BOND_SLAVE_IFNAME, IFNAMSIZ,
+					slave_dev->name))
+				goto nla_put_failure;
+
+			if (nla_put_u32(skb, IFLA_BOND_SLAVE_IFINDEX,
+					slave_dev->ifindex))
+				goto nla_put_failure;
+
+			if (nla_put_u16(skb,
+					IFLA_BOND_SLAVE_AD_INFO_ACTOR_KEY,
+					ad_port->actor_oper_port_key))
+				goto nla_put_failure;
+
+			if (nla_put_u16(skb,
+					ILFA_BOND_SLAVE_AD_PARTNER_OPER_SYSTEM_PRIO,
+					ad_port->partner_oper.system_priority))
+				goto nla_put_failure;
+
+			if (nla_put(skb,
+					IFLA_BOND_SLAVE_AD_PARTNER_OPER_SYSTEM_ID,
+					sizeof(ad_port->partner_oper.system.mac_addr_value),
+					&ad_port->partner_oper.system.mac_addr_value))
+				goto nla_put_failure;
+
+			if (nla_put_u16(skb,
+					IFLA_BOND_SLAVE_AD_PATNER_OPER_KEY,
+					ad_port->partner_oper.key))
+				goto nla_put_failure;
+
+			if (nla_put_u16(skb,
+					IFLA_BOND_SLAVE_AD_ACTOR_PORT_NUM,
+					ad_port->actor_port_number))
+				goto nla_put_failure;
+
+			if (nla_put_u16(skb,
+					IFLA_BOND_SLAVE_PARTNER_PORT_NUM,
+					ad_port->partner_oper.port_number))
+				goto nla_put_failure;
+
+			if (nla_put_u16(skb,
+					IFLA_BOND_SLAVE_PARTNER_OPER_PORT_PRIO,
+					ad_port->partner_oper.port_priority))
+				goto nla_put_failure;
+
+			if (nla_put_u16(skb,
+					IFLA_BOND_SLAVE_AD_ACTOR_PORT_PRIO,
+					ad_port->actor_port_priority))
+				goto nla_put_failure;
+
+			if (nla_put_u8(skb,
+					IFLA_BOND_SLAVE_AD_RX_PORT_STATE,
+					ad_port->sm_rx_state))
 				goto nla_put_failure;
 		}
 	}
@@ -575,7 +641,19 @@ static int bond_newlink(struct net *src_net, struct net_device *bond_dev,
 
 static size_t bond_get_size(const struct net_device *bond_dev)
 {
-	return nla_total_size(sizeof(u8)) +	/* IFLA_BOND_MODE */
+	size_t slave_size = 0;
+	size_t bond_size = 0;
+	struct list_head *iter;
+	struct bonding *bond = netdev_priv(bond_dev);
+	struct slave *slave;
+
+	bond_for_each_slave(bond, slave, iter) {
+		if (slave->dev)
+			slave_size += bond_get_slave_size(bond_dev, slave->dev) +
+				nla_total_size(sizeof(struct nlattr)); /* IFLA_BOND_SLAVE_LIST_ITEM */
+	}
+
+	bond_size = nla_total_size(sizeof(u8)) +	/* IFLA_BOND_MODE */
 		nla_total_size(sizeof(u32)) +	/* IFLA_BOND_ACTIVE_SLAVE */
 		nla_total_size(sizeof(u32)) +	/* IFLA_BOND_MIIMON */
 		nla_total_size(sizeof(u32)) +	/* IFLA_BOND_UPDELAY */
@@ -615,7 +693,13 @@ static size_t bond_get_size(const struct net_device *bond_dev)
 						/* IFLA_BOND_NS_IP6_TARGET */
 		nla_total_size(sizeof(struct nlattr)) +
 		nla_total_size(sizeof(struct in6_addr)) * BOND_MAX_NS_TARGETS +
+		nla_total_size(sizeof(struct nlattr)) + /* IFLA_BOND_SLAVE_LIST */
 		0;
+
+	if (!slave_size)
+		return bond_size;
+
+	return bond_size + slave_size;
 }
 
 static int bond_option_active_slave_get_ifindex(struct bonding *bond)
@@ -816,6 +900,30 @@ static int bond_fill_info(struct sk_buff *skb,
 
 			nla_nest_end(skb, nest);
 		}
+		struct nlattr *nest, *port_item;
+
+		nest = nla_nest_start_noflag(skb, IFLA_BOND_SLAVE_LIST);
+		if (!nest)
+			goto nla_put_failure;
+
+		struct list_head *iter;
+		struct bonding *bond = netdev_priv(bond_dev);
+		struct slave *slave;
+
+		bond_for_each_slave(bond, slave, iter) {
+			if (slave->dev) {
+				port_item = nla_nest_start_noflag(skb, IFLA_BOND_SLAVE_LIST_ITEM);
+				if (!port_item)
+					goto nla_put_failure;
+
+				if (bond_fill_slave_info(skb, bond_dev, slave->dev))
+					goto nla_put_failure;
+
+				nla_nest_end(skb, port_item);
+			}
+		}
+
+		nla_nest_end(skb, nest);
 	}
 
 	return 0;

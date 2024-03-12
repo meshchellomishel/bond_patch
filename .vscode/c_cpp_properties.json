@@ -1,0 +1,22 @@
+{
+  "env": {
+    "ROOTDIR": "/home/student/virtual/vm_mount"
+  },
+  "configurations": [
+    {
+      "name": "linux-gcc-x64",
+      "includePath": [
+        "${workspaceFolder}/**"
+      ],
+      "defines": [
+        "MODULE_GIT_HASH='ffddf154f3be1b4089d9faf2499e5db8d63bf691-dirty'",
+        "PREFIX=\"/usr/local\""
+      ],
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "${default}",
+      "cppStandard": "${default}",
+      "intelliSenseMode": "linux-gcc-x64"
+    }
+  ],
+  "version": 4
+}

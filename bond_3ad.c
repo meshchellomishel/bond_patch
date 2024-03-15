@@ -1044,7 +1044,9 @@ static void ad_mux_machine(struct port *port, bool *update_slave_arr)
 	}
 
 	/* check if the state machine was changed */
-	if (port->sm_mux_state != last_state) {
+	if (port->sm_mux_state != last_state ||
+		(!port->aggregator->is_active &&
+		port->actor_oper_port_state & LACP_STATE_SYNCHRONIZATION)) {
 		slave_dbg(port->slave->bond->dev, port->slave->dev,
 			  "Mux Machine: Port=%d, Last State=%d, Curr State=%d\n",
 			  port->actor_port_number,
